@@ -1,0 +1,7 @@
+build/
+dist/
+release/
+.publish/
+PomodoroTimerData/
+*.zip
+*.user

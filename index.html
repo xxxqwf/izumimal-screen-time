@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d11" />
+<title>番茄时钟</title>
+<link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='.9em' font-size='90'&gt;🍅&lt;/text&gt;&lt;/svg&gt;" />
+<style>
+  :root {
+    --bg: #0b0d11;
+    --text: #eef1f6;
+    --muted: #8b93a3;
+    --accent: #ff6b5e;
+    --accent-soft: rgba(255, 107, 94, 0.16);
+    --line: rgba(255, 255, 255, 0.08);
+  }
+  body[data-mode="short"] { --accent: #3ddc97; --accent-soft: rgba(61, 220, 151, 0.16); }
+  body[data-mode="long"]  { --accent: #5aa9ff; --accent-soft: rgba(90, 169, 255, 0.16); }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -25%;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(38% 38% at 26% 18%, var(--accent-soft), transparent 70%),
+      radial-gradient(34% 34% at 78% 82%, rgba(120, 130, 255, 0.10), transparent 72%);
+    filter: blur(26px);
+    transition: background 0.6s ease;
+  }
+
+  .app {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ---------- top bar ---------- */
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 4px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .brand .logo { font-size: 18px; line-height: 1; }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--muted);
+    font: inherit;
+    font-size: 15px;
+    cursor: pointer;
+    transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease, transform 0.12s ease;
+  }
+  .icon-btn:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.2); }
+  .icon-btn:active { transform: scale(0.94); }
+
+  /* ---------- mode switch ---------- */
+  .segmented {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--line);
+  }
+  .segmented button {
+    flex: 1;
+    padding: 9px 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 13.5px;
+    cursor: pointer;
+    transition: background 0.25s ease, color 0.25s ease, font-weight 0.1s;
+  }
+  .segmented button:hover { color: var(--text); }
+  .segmented button.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* ---------- timer card ---------- */
+  .card {
+    position: relative;
+    padding: 22px 22px 20px;
+    border-radius: 28px;
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .ring-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 316px;
+    aspect-ratio: 1 / 1;
+    margin: 0 auto;
+  }
+  .ring {
+    display: block;
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+    overflow: visible;
+  }
+  .ring .track {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.06);
+    stroke-width: 7;
+  }
+  .ring .progress {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 7;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.25s linear, stroke 0.4s ease;
+    filter: drop-shadow(0 0 7px var(--accent-soft));
+  }
+
+  .dial {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .mode-label {
+    font-size: 11.5px;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    text-indent: 0.2em;
+  }
+  .time {
+    font-size: clamp(48px, 15vw, 72px);
+    font-weight: 300;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    color: #fff;
+  }
+  .dots {
+    display: flex;
+    gap: 7px;
+    margin-top: 8px;
+    min-height: 6px;
+  }
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.16);
+    transition: background 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+  }
+  .dot.done {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    transform: scale(1.12);
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin-top: 20px;
+  }
+  .controls .icon-btn {
+    width: 46px;
+    height: 46px;
+    font-size: 16px;
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  .primary {
+    min-width: 136px;
+    padding: 14px 34px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #0a0c10;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    box-shadow: 0 10px 26px -10px var(--accent);
+    transition: transform 0.15s ease, box-shadow 0.25s ease, background 0.3s ease, color 0.3s ease;
+  }
+  .primary:hover { transform: translateY(-1px); box-shadow: 0 14px 30px -10px var(--accent); }
+  .primary:active { transform: translateY(0) scale(0.985); }
+
+  /* ---------- footer ---------- */
+  .foot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    font-size: 12.5px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .foot strong { color: var(--text); font-weight: 600; }
+  .hint { font-size: 11.5px; opacity: 0.5; letter-spacing: 0.02em; }
+
+  /* ---------- settings modal ---------- */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(5, 6, 9, 0.62);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+  }
+  .overlay.open { opacity: 1; pointer-events: auto; }
+
+  .modal {
+    width: 100%;
+    max-width: 360px;
+    padding: 18px 20px 16px;
+    border-radius: 22px;
+    border: 1px solid var(--line);
+    background: #151821;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+    transform: translateY(10px) scale(0.98);
+    transition: transform 0.22s ease;
+  }
+  .overlay.open .modal { transform: none; }
+
+  .modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .modal-head h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .rows { display: flex; flex-direction: column; margin-top: 6px; }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 11px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .row:last-child { border-bottom: 0; }
+  .row small { margin-left: 6px; color: var(--muted); font-size: 11.5px; }
+
+  .row input[type="number"] {
+    width: 68px;
+    padding: 7px 8px;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .row input[type="number"]::-webkit-outer-spin-button,
+  .row input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .row input[type="number"]:focus { outline: none; border-color: var(--accent); }
+
+  input.switch {
+    position: relative;
+    flex: 0 0 auto;
+    width: 44px;
+    height: 26px;
+    margin: 0;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.13);
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: background 0.22s ease;
+  }
+  input.switch::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.22s ease;
+  }
+  input.switch:checked { background: var(--accent); }
+  input.switch:checked::after { transform: translateX(18px); }
+
+  .modal-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+  }
+  .link {
+    padding: 6px 0;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: rgba(255, 255, 255, 0.2);
+  }
+  .link:hover { color: var(--text); }
+  .primary.small { min-width: 0; padding: 10px 22px; font-size: 13.5px; }
+
+  /* ---------- toast ---------- */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(28px + env(safe-area-inset-bottom));
+    z-index: 30;
+    padding: 11px 18px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(30, 33, 42, 0.95);
+    color: var(--text);
+    font-size: 13.5px;
+    white-space: nowrap;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    transform: translate(-50%, 14px);
+    pointer-events: none;
+    transition: opacity 0.28s ease, transform 0.28s ease;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  @media (max-width: 380px) {
+    body { padding: 16px 14px calc(16px + env(safe-area-inset-bottom)); }
+    .card { padding: 16px 16px 18px; border-radius: 24px; }
+    .controls .icon-btn { width: 42px; height: 42px; }
+    .primary { min-width: 118px; padding: 13px 26px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body data-mode="focus">
+  <div class="app">
+    <header class="top">
+      <div class="brand"><span class="logo">🍅</span><span>番茄时钟</span></div>
+      <button class="icon-btn" id="settingsBtn" type="button" aria-label="设置" title="设置">⚙</button>
+    </header>
+
+    <nav class="segmented" id="tabs" aria-label="计时模式">
+      <button type="button" data-mode="focus" class="active">专注</button>
+      <button type="button" data-mode="short">短休息</button>
+      <button type="button" data-mode="long">长休息</button>
+    </nav>
+
+    <main class="card">
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 240 240" aria-hidden="true">
+          <circle class="track" cx="120" cy="120" r="104"></circle>
+          <circle class="progress" id="progress" cx="120" cy="120" r="104"></circle>
+        </svg>
+        <div class="dial">
+          <div class="mode-label" id="modeLabel">专注时间</div>
+          <div class="time" id="time" role="timer" aria-live="off">25:00</div>
+          <div class="dots" id="dots" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="icon-btn" id="resetBtn" type="button" aria-label="重置" title="重置 (R)">⟲</button>
+        <button class="primary" id="startBtn" type="button">开始</button>
+        <button class="icon-btn" id="skipBtn" type="button" aria-label="跳过" title="跳过 (S)">⏭</button>
+      </div>
+    </main>
+
+    <footer class="foot">
+      <div>今日 <strong id="todayCount">0</strong> 个番茄 · <strong id="todayMinutes">0</strong> 分钟</div>
+      <div class="hint">空格 开始/暂停 · R 重置 · S 跳过</div>
+    </footer>
+  </div>
+
+  <div class="overlay" id="overlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-head">
+        <h2 id="settingsTitle">设置</h2>
+        <button class="icon-btn" id="closeSettings" type="button" aria-label="关闭">✕</button>
+      </div>
+
+      <div class="rows">
+        <label class="row"><span>专注时长<small>分钟</small></span>
+          <input type="number" id="setFocus" min="1" max="180" step="1" inputmode="numeric">
+        </label>
+        <label class="row"><span>短休息<small>分钟</small></span>
+          <input type="number" id="setShort" min="1" max="60" step="1" inputmode="numeric">
+        </label>
+        <label class="row"><span>长休息<small>分钟</small></span>
+          <input type="number" id="setLong" min="1" max="90" step="1" inputmode="numeric">
+        </label>
+        <label class="row"><span>长休息间隔<small>个番茄</small></span>
+          <input type="number" id="setEvery" min="1" max="12" step="1" inputmode="numeric">
+        </label>
+        <label class="row"><span>自动开始下一段</span>
+          <input type="checkbox" class="switch" id="setAuto">
+        </label>
+        <label class="row"><span>结束提示音</span>
+          <input type="checkbox" class="switch" id="setSound">
+        </label>
+      </div>
+
+      <div class="modal-foot">
+        <button class="link" id="resetDefaults" type="button">恢复默认</button>
+        <button class="primary small" id="doneSettings" type="button">完成</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var STORAGE_KEY = 'pomodoro.v1';
+  var DEFAULTS = { focus: 25, short: 5, long: 15, longEvery: 4, autoStart: true, sound: true };
+  var MODE_ORDER = ['focus', 'short', 'long'];
+  var MODE_META = {
+    focus: { label: '专注', dial: '专注时间', done: '专注结束，休息一下 ☕' },
+    short: { label: '短休息', dial: '短休息', done: '休息结束，开始下一个番茄 🍅' },
+    long:  { label: '长休息', dial: '长休息', done: '长休息结束，开始新一轮 🍅' }
+  };
+  var RADIUS = 104;
+  var CIRC = 2 * Math.PI * RADIUS;
+
+  function $(id) { return document.getElementById(id); }
+
+  var els = {
+    tabs: $('tabs'),
+    dots: $('dots'),
+    time: $('time'),
+    modeLabel: $('modeLabel'),
+    progress: $('progress'),
+    startBtn: $('startBtn'),
+    resetBtn: $('resetBtn'),
+    skipBtn: $('skipBtn'),
+    settingsBtn: $('settingsBtn'),
+    overlay: $('overlay'),
+    closeSettings: $('closeSettings'),
+    doneSettings: $('doneSettings'),
+    resetDefaults: $('resetDefaults'),
+    setFocus: $('setFocus'),
+    setShort: $('setShort'),
+    setLong: $('setLong'),
+    setEvery: $('setEvery'),
+    setAuto: $('setAuto'),
+    setSound: $('setSound'),
+    todayCount: $('todayCount'),
+    todayMinutes: $('todayMinutes'),
+    toast: $('toast')
+  };
+
+  function todayKey() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  var state = {
+    settings: Object.assign({}, DEFAULTS),
+    mode: 'focus',
+    total: DEFAULTS.focus * 60,
+    remaining: DEFAULTS.focus * 60,
+    running: false,
+    endAt: 0,
+    cycle: 0,
+    stats: { date: todayKey(), pomodoros: 0, minutes: 0 }
+  };
+
+  var intervalId = null;
+  var toastTimer = null;
+
+  /* ---------------- 持久化 ---------------- */
+
+  function load() {
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (e) { saved = null; }
+    if (!saved || typeof saved !== 'object') return;
+
+    var s = saved.settings || {};
+    ['focus', 'short', 'long', 'longEvery'].forEach(function (k) {
+      var n = Number(s[k]);
+      if (Number.isFinite(n) && n >= 1) state.settings[k] = Math.round(n);
+    });
+    if (typeof s.autoStart === 'boolean') state.settings.autoStart = s.autoStart;
+    if (typeof s.sound === 'boolean') state.settings.sound = s.sound;
+
+    var st = saved.stats;
+    if (st && st.date === todayKey()) {
+      state.stats = {
+        date: st.date,
+        pomodoros: Math.max(0, Number(st.pomodoros) || 0),
+        minutes: Math.max(0, Number(st.minutes) || 0)
+      };
+    }
+    var cycle = Number(saved.cycle);
+    if (Number.isFinite(cycle)) state.cycle = Math.max(0, Math.min(Math.round(cycle), state.settings.longEvery));
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        settings: state.settings,
+        stats: state.stats,
+        cycle: state.cycle
+      }));
+    } catch (e) { /* 隐私模式等场景下静默失败 */ }
+  }
+
+  function ensureToday() {
+    if (state.stats.date !== todayKey()) {
+      state.stats = { date: todayKey(), pomodoros: 0, minutes: 0 };
+    }
+  }
+
+  /* ---------------- 渲染 ---------------- */
+
+  function fmtTime(totalSecs) {
+    var s = Math.max(0, Math.floor(totalSecs));
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    var h = Math.floor(s / 3600);
+    var m = Math.floor((s % 3600) / 60);
+    var sec = s % 60;
+    return h > 0 ? h + ':' + pad(m) + ':' + pad(sec) : pad(m) + ':' + pad(sec);
+  }
+
+  function renderTime() {
+    var secs = Math.max(0, Math.ceil(state.remaining - 1e-6));
+    els.time.textContent = fmtTime(secs);
+    var p = state.total > 0 ? Math.min(1, Math.max(0, state.remaining / state.total)) : 0;
+    els.progress.style.strokeDashoffset = String(CIRC * (1 - p));
+    els.startBtn.textContent = state.running ? '暂停' : '开始';
+    document.title = state.running
+      ? fmtTime(secs) + ' · ' + MODE_META[state.mode].label
+      : '番茄时钟';
+  }
+
+  function renderMeta() {
+    els.modeLabel.textContent = MODE_META[state.mode].dial;
+
+    Array.prototype.forEach.call(els.tabs.querySelectorAll('button'), function (btn) {
+      btn.classList.toggle('active', btn.dataset.mode === state.mode);
+    });
+
+    var n = state.settings.longEvery;
+    if (els.dots.childElementCount !== n) {
+      els.dots.innerHTML = '';
+      for (var i = 0; i < n; i++) {
+        var dot = document.createElement('span');
+        dot.className = 'dot';
+        els.dots.appendChild(dot);
+      }
+    }
+    Array.prototype.forEach.call(els.dots.children, function (dot, idx) {
+      dot.classList.toggle('done', idx < state.cycle);
+    });
+
+    els.todayCount.textContent = String(state.stats.pomodoros);
+    els.todayMinutes.textContent = String(state.stats.minutes);
+  }
+
+  function render() {
+    renderTime();
+  }
+
+  /* ---------------- 计时 ---------------- */
+
+  function clearTimer() {
+    if (intervalId !== null) {
+      clearInterval(intervalId);
+      intervalId = null;
+    }
+    state.running = false;
+  }
+
+  function startTimer() {
+    if (state.running) return;
+    if (state.remaining <= 0.05) state.remaining = state.total;
+    state.running = true;
+    state.endAt = Date.now() + state.remaining * 1000;
+    if (intervalId !== null) clearInterval(intervalId);
+    intervalId = setInterval(tick, 200);
+    unlockAudio();
+    render();
+    toast(state.mode === 'focus' ? '专注开始 🍅' : '休息开始 ☕', 1400);
+  }
+
+  function pauseTimer() {
+    if (!state.running) return;
+    state.remaining = Math.max(0, (state.endAt - Date.now()) / 1000);
+    clearTimer();
+    render();
+  }
+
+  function toggleTimer() {
+    if (state.running) pauseTimer();
+    else startTimer();
+  }
+
+  function tick() {
+    if (!state.running) return;
+    var left = (state.endAt - Date.now()) / 1000;
+    if (left <= 0) {
+      state.remaining = 0;
+      render();
+      complete();
+      return;
+    }
+    state.remaining = left;
+    render();
+  }
+
+  function complete() {
+    clearTimer();
+    var finished = state.mode;
+    playChime();
+    ensureToday();
+
+    if (finished === 'focus') {
+      state.cycle = Math.min(state.settings.longEvery, state.cycle + 1);
+      state.stats.pomodoros += 1;
+      state.stats.minutes += state.settings.focus;
+      save();
+      renderMeta();
+      var next = state.cycle >= state.settings.longEvery ? 'long' : 'short';
+      toast(MODE_META[finished].done, 3000);
+      switchMode(next, state.settings.autoStart);
+    } else {
+      if (finished === 'long') state.cycle = 0;
+      save();
+      renderMeta();
+      toast(MODE_META[finished].done, 3000);
+      switchMode('focus', state.settings.autoStart);
+    }
+  }
+
+  function switchMode(mode, autostart) {
+    if (MODE_ORDER.indexOf(mode) === -1) return;
+    clearTimer();
+    state.mode = mode;
+    var mins = state.settings[mode];
+    state.total = mins * 60;
+    state.remaining = state.total;
+    document.body.dataset.mode = mode;
+    renderMeta();
+    render();
+    if (autostart) startTimer();
+  }
+
+  function resetTimer() {
+    clearTimer();
+    state.remaining = state.total;
+    render();
+    toast('已重置', 1200);
+  }
+
+  function skipTimer() {
+    clearTimer();
+    var next;
+    if (state.mode === 'focus') {
+      next = state.cycle + 1 >= state.settings.longEvery ? 'long' : 'short';
+    } else {
+      next = 'focus';
+      if (state.mode === 'long') state.cycle = 0;
+    }
+    switchMode(next, false);
+    toast('已跳过', 1200);
+  }
+
+  /* ---------------- 提示音 ---------------- */
+
+  var audioCtx = null;
+
+  function getAudio() {
+    if (audioCtx) return audioCtx;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    try { audioCtx = new AC(); } catch (e) { audioCtx = null; }
+    return audioCtx;
+  }
+
+  function unlockAudio() {
+    var ctx = getAudio();
+    if (ctx && ctx.state === 'suspended') { ctx.resume().catch(function () {}); }
+  }
+
+  function playChime() {
+    if (!state.settings.sound) return;
+    var ctx = getAudio();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') { ctx.resume().catch(function () {}); }
+    var base = ctx.currentTime + 0.02;
+    var notes = [[880, 0], [1108.73, 0.16], [1318.51, 0.32], [1760, 0.5]];
+    notes.forEach(function (pair) {
+      var freq = pair[0];
+      var at = base + pair[1];
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, at);
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(0.22, at + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.95);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(at);
+      osc.stop(at + 1.05);
+    });
+  }
+
+  /* ---------------- toast ---------------- */
+
+  function toast(msg, ms) {
+    els.toast.textContent = msg;
+    els.toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      els.toast.classList.remove('show');
+      toastTimer = null;
+    }, ms || 2000);
+  }
+
+  /* ---------------- 设置面板 ---------------- */
+
+  function fillSettingsForm() {
+    els.setFocus.value = state.settings.focus;
+    els.setShort.value = state.settings.short;
+    els.setLong.value = state.settings.long;
+    els.setEvery.value = state.settings.longEvery;
+    els.setAuto.checked = state.settings.autoStart;
+    els.setSound.checked = state.settings.sound;
+  }
+
+  function clampInt(value, min, max, fallback) {
+    var n = Math.round(Number(value));
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  }
+
+  function applySettings() {
+    state.settings.focus = clampInt(els.setFocus.value, 1, 180, DEFAULTS.focus);
+    state.settings.short = clampInt(els.setShort.value, 1, 60, DEFAULTS.short);
+    state.settings.long = clampInt(els.setLong.value, 1, 90, DEFAULTS.long);
+    state.settings.longEvery = clampInt(els.setEvery.value, 1, 12, DEFAULTS.longEvery);
+    state.settings.autoStart = els.setAuto.checked;
+    state.settings.sound = els.setSound.checked;
+
+    if (state.cycle > state.settings.longEvery) state.cycle = state.settings.longEvery;
+
+    fillSettingsForm();
+
+    if (!state.running) {
+      var mins = state.settings[state.mode];
+      state.total = mins * 60;
+      state.remaining = state.total;
+    }
+
+    save();
+    renderMeta();
+    render();
+  }
+
+  function openSettings() {
+    fillSettingsForm();
+    els.overlay.classList.add('open');
+    els.overlay.setAttribute('aria-hidden', 'false');
+    els.setFocus.focus();
+  }
+
+  function closeSettings() {
+    if (!els.overlay.classList.contains('open')) return;
+    els.overlay.classList.remove('open');
+    els.overlay.setAttribute('aria-hidden', 'true');
+  }
+
+  /* ---------------- 事件绑定 ---------------- */
+
+  function bind() {
+    els.startBtn.addEventListener('click', function () { toggleTimer(); this.blur(); });
+    els.resetBtn.addEventListener('click', function () { resetTimer(); this.blur(); });
+    els.skipBtn.addEventListener('click', function () { skipTimer(); this.blur(); });
+    els.settingsBtn.addEventListener('click', function () { openSettings(); this.blur(); });
+    els.closeSettings.addEventListener('click', closeSettings);
+    els.doneSettings.addEventListener('click', function () { applySettings(); closeSettings(); });
+
+    els.overlay.addEventListener('click', function (e) {
+      if (e.target === els.overlay) { applySettings(); closeSettings(); }
+    });
+
+    Array.prototype.forEach.call(els.tabs.querySelectorAll('button'), function (btn) {
+      btn.addEventListener('click', function () {
+        if (btn.dataset.mode === state.mode) return;
+        switchMode(btn.dataset.mode, false);
+        btn.blur();
+      });
+    });
+
+    [els.setFocus, els.setShort, els.setLong, els.setEvery].forEach(function (input) {
+      input.addEventListener('change', applySettings);
+    });
+    [els.setAuto, els.setSound].forEach(function (input) {
+      input.addEventListener('change', function () {
+        if (input === els.setSound) { state.settings.sound = input.checked; if (input.checked) playChime(); }
+        applySettings();
+      });
+    });
+
+    els.resetDefaults.addEventListener('click', function () {
+      state.settings = Object.assign({}, DEFAULTS);
+      state.cycle = 0;
+      fillSettingsForm();
+      if (!state.running) {
+        state.total = state.settings[state.mode] * 60;
+        state.remaining = state.total;
+      }
+      save();
+      renderMeta();
+      render();
+      toast('已恢复默认设置', 1600);
+    });
+
+    document.addEventListener('keydown', function (e) {
+      var tag = (e.target && e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.code === 'Space' || e.key === ' ') {
+        if (tag === 'button') return; // 交给按钮自身的空格激活行为
+        e.preventDefault();
+        toggleTimer();
+        return;
+      }
+      if (e.key === 'Escape') { applySettings(); closeSettings(); return; }
+
+      var key = e.key.toLowerCase();
+      if (key === 'r') { resetTimer(); }
+      else if (key === 's') { skipTimer(); }
+      else if (key === '1' || key === '2' || key === '3') {
+        var mode = MODE_ORDER[Number(key) - 1];
+        if (mode !== state.mode) switchMode(mode, false);
+      }
+    });
+
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && state.running) tick();
+    });
+
+    window.addEventListener('beforeunload', function () {
+      if (state.running) {
+        state.remaining = Math.max(0, (state.endAt - Date.now()) / 1000);
+        state.running = false;
+      }
+      save();
+    });
+  }
+
+  /* ---------------- 启动 ---------------- */
+
+  function init() {
+    load();
+    ensureToday();
+    state.total = state.settings[state.mode] * 60;
+    state.remaining = state.total;
+    document.body.dataset.mode = state.mode;
+    els.progress.style.strokeDasharray = CIRC + ' ' + CIRC;
+    els.progress.style.strokeDashoffset = '0';
+    fillSettingsForm();
+    bind();
+    renderMeta();
+    render();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>
